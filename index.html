@@ -185,22 +185,34 @@
 
     <div class="input-row">
       <input type="text" id="itemInput" placeholder="추가할 항목을 입력하세요" maxlength="100">
-      <button onclick="addItem()">추가</button>
+      <button>추가</button>
     </div>
 
     <div class="summary">
       <span id="summaryText">항목 없음</span>
-      <button class="clear-btn" onclick="clearChecked()">완료 항목 삭제</button>
+      <button class="clear-btn">완료 항목 삭제</button>
     </div>
 
     <ul class="list" id="list"></ul>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    let items = JSON.parse(localStorage.getItem('shoppingList') || '[]');
+    const { createClient } = supabase;
+    const SUPABASE_URL = 'https://rnlcycruugrmhomzxitq.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJubGN5Y3J1dWdybWhvbXp4aXRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNjc0MDksImV4cCI6MjA5MTk0MzQwOX0.FRV-onpgzQgK7x8sYfwB2czAeYvOGz-LhJL_YTZHSTg';
+    const client = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    function save() {
-      localStorage.setItem('shoppingList', JSON.stringify(items));
+    let items = [];
+
+    async function loadItems() {
+      const { data, error } = await client
+        .from('shopping_items')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) { console.error(error); return; }
+      items = data;
+      render();
     }
 
     function render() {
@@ -222,45 +234,58 @@
       const done = items.filter(i => i.checked).length;
       summary.textContent = `총 ${total}개 · 완료 ${done}개`;
 
-      items.forEach((item, idx) => {
+      items.forEach((item) => {
         const li = document.createElement('li');
         li.className = 'item' + (item.checked ? ' checked' : '');
         li.innerHTML = `
-          <input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggle(${idx})">
+          <input type="checkbox" ${item.checked ? 'checked' : ''} data-id="${item.id}">
           <span class="item-text">${escapeHtml(item.text)}</span>
-          <button class="delete-btn" onclick="remove(${idx})" title="삭제">✕</button>
+          <button class="delete-btn" data-id="${item.id}" title="삭제">✕</button>
         `;
+        li.querySelector('input[type="checkbox"]').addEventListener('change', () => toggle(item.id, !item.checked));
+        li.querySelector('.delete-btn').addEventListener('click', () => remove(item.id));
         list.appendChild(li);
       });
     }
 
-    function addItem() {
+    async function addItem() {
       const input = document.getElementById('itemInput');
       const text = input.value.trim();
       if (!text) return;
-      items.unshift({ text, checked: false });
-      save();
-      render();
+      const { error } = await client
+        .from('shopping_items')
+        .insert({ text, checked: false });
+      if (error) { console.error(error); return; }
       input.value = '';
       input.focus();
+      await loadItems();
     }
 
-    function toggle(idx) {
-      items[idx].checked = !items[idx].checked;
-      save();
-      render();
+    async function toggle(id, checked) {
+      const { error } = await client
+        .from('shopping_items')
+        .update({ checked })
+        .eq('id', id);
+      if (error) { console.error(error); return; }
+      await loadItems();
     }
 
-    function remove(idx) {
-      items.splice(idx, 1);
-      save();
-      render();
+    async function remove(id) {
+      const { error } = await client
+        .from('shopping_items')
+        .delete()
+        .eq('id', id);
+      if (error) { console.error(error); return; }
+      await loadItems();
     }
 
-    function clearChecked() {
-      items = items.filter(i => !i.checked);
-      save();
-      render();
+    async function clearChecked() {
+      const { error } = await client
+        .from('shopping_items')
+        .delete()
+        .eq('checked', true);
+      if (error) { console.error(error); return; }
+      await loadItems();
     }
 
     function escapeHtml(text) {
@@ -270,8 +295,10 @@
     document.getElementById('itemInput').addEventListener('keydown', e => {
       if (e.key === 'Enter') addItem();
     });
+    document.querySelector('.input-row button').addEventListener('click', addItem);
+    document.querySelector('.clear-btn').addEventListener('click', clearChecked);
 
-    render();
+    loadItems();
   </script>
 </body>
 </html>
